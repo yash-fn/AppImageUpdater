@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Declare two associative arrays
+declare -A app1=(
+    [name]='cura'
+    [link]='https://ultimaker.com/software/ultimaker-cura'
+)
+
+declare -A app2=(
+    [name]='superslicer'
+    [link]='https://github.com/supermerill/SuperSlicer/releases/latest'
+)
+
+APPDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Declare array of names of associative arrays
+names=("${!app@}")
+
+# Declare loop variable as nameref
+declare -n app_ref
+
+update_app () {
+
+	NAME=$1
+
+	LINK=$2
+
+	APPLINK=$(grep -oE 'https://.*\.AppImage$' <(lynx -dump -listonly $LINK) || js -p 'decodeURIComponent(JSON.parse('"'$(grep -shoP '["'"'"']https[^" ]*?\.AppImage["'"'"']' <(curl -s $LINK))'"'));')
+
+	APPNAME=$(grep -shoP '[^/]*\.AppImage$' <(echo $APPLINK) )
+
+	CURRENTAPPNAME=$(grep -iE "$NAME"'.*\.AppImage$' <(ls $APPDIR))
+
+	if [ "$CURRENTAPPNAME" = "$APPNAME" ]; then 
+		echo -e "$CURRENTAPPNAME ($NAME)\t: latest version"
+	else 
+		echo -e "$NAME\t:"' upgrading ('"$CURRENTAPPNAME"' ----> '"$APPNAME)";
+		cd $APPDIR
+		rm -rf old && mkdir old && mv $CURRENTAPPNAME old/
+		wget --quiet $APPLINK && chmod +x $APPNAME && rm -rf old 
+	fi
+}
+
+
+update_tool () {
+	x=$1
+	appimageupdatetool-x86_64.AppImage -j $x >/dev/null 2>&1 
+	case $? in
+		0)
+			echo -e "$x\t: latest version"
+			;;
+		1)
+			echo -n "$x: Attempting Upgrade ...";
+			appimageupdatetool-x86_64.AppImage -r $x >/dev/null 2>&1 && echo "Update Successful" || echo "Update Failed"
+			;;
+		*)
+			#echo "$x: Something went wrong ... unexpected return code: $?";
+			;;
+	esac
+}
+
+
+cd $APPDIR
+for x in *.AppImage; do	
+	update_tool $x &
+done
+
+# Loop over names
+for app_ref in "${names[@]}"; do
+    update_app "${app_ref[name]}" "${app_ref[link]}" &
+done
+wait
